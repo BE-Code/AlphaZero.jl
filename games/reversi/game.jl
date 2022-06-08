@@ -3,9 +3,8 @@ import AlphaZero.GI
 using Crayons
 using StaticArrays
 
-const NUM_COLS = 8
-const NUM_ROWS = 8
-const NUM_CELLS = NUM_COLS * NUM_ROWS
+const BOARD_SIZE = 8
+const NUM_CELLS = BOARD_SIZE ^ 2
 # const TO_CONNECT = 4
 
 const Player = UInt8
@@ -16,9 +15,11 @@ other(p::Player) = 0x03 - p
 
 const Cell = UInt8
 const EMPTY = 0x00
-const Board = SMatrix{NUM_COLS, NUM_ROWS, Cell, NUM_CELLS}
+const Board = SVector{NUM_CELLS, Cell}
+#const Board = SMatrix{NUM_COLS, NUM_ROWS, Cell, NUM_CELLS}
 
-const INITIAL_BOARD = @SMatrix zeros(Cell, NUM_COLS, NUM_ROWS)
+const INITIAL_BOARD = @SVector zeros(Cell, NUM_CELLS);
+#const INITIAL_BOARD = @SMatrix zeros(Cell, NUM_COLS, NUM_ROWS)
 const INITIAL_STATE = (board=INITIAL_BOARD, curplayer=WHITE)
 
 # TODO: we could have the game parametrized by grid size.
@@ -34,10 +35,6 @@ mutable struct GameEnv <: GI.AbstractGameEnv
   curplayer :: Player
   finished :: Bool
   winner :: Player
-  amask :: Vector{Bool} # actions mask
-  # Actions history, which uniquely identifies the current board position
-  # Used by external solvers
-  history :: Union{Nothing, Vector{Int}}
 end
 
 
@@ -58,7 +55,7 @@ function GI.init(::GameSpec)
 end
 
 
-## Modify the state of the GameEnv
+## Modify the state of the GameEnv with `state`
 function GI.set_state!(g::GameEnv, state)
   g.history = nothing
   g.board = state.board
