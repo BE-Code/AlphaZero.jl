@@ -99,6 +99,11 @@ history(g::GameEnv) = g.history
 ##### Defining game rules
 #####
 
+
+xy_to_pos(x::Uint8, y::Uint8) = (y - 1) * BOARD_SIZE + x
+pos_to_xy(pos::Uint8) = (ceil(pos / BOARD_SIZE), ((pos - 1) % BOARD_SIZE) + 1)
+
+
 function first_free(board, col)
   row = 1
   while row <= NUM_ROWS && board[col, row] != EMPTY
@@ -202,6 +207,8 @@ end
 ##### Simple heuristic for minmax
 #####
 
+
+#=
 const Pos = Tuple{Int, Int}
 const Alignment = Vector{Pos}
 
@@ -252,6 +259,8 @@ function GI.heuristic_value(g::GameEnv)
   yours = heuristic_value_for(g, other(g.curplayer))
   return mine - yours
 end
+=#
+
 
 #####
 ##### ML interface
@@ -299,6 +308,7 @@ end
 ##### User interface
 #####
 
+#=
 ## Returns a string representing a given action.
 GI.action_string(::GameSpec, a) = string(a)
 
@@ -379,3 +389,4 @@ function GI.read_state(::GameSpec)
     return nothing
   end
 end
+=#
