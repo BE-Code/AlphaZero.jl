@@ -22,8 +22,13 @@ const INITIAL_BOARD = @SMatrix zeros(Cell, NUM_COLS, NUM_ROWS)
 const INITIAL_STATE = (board=INITIAL_BOARD, curplayer=WHITE)
 
 # TODO: we could have the game parametrized by grid size.
+## So, basically, this is the PARAMETERS for the game.
+## For example, if you want to parameterize grid size, you could.
 struct GameSpec <: GI.AbstractGameSpec end
 
+
+## The GameEnv holds a game spec and a current state.
+## Basically the "environment" for the AI
 mutable struct GameEnv <: GI.AbstractGameEnv
   board :: Board
   curplayer :: Player
@@ -35,8 +40,13 @@ mutable struct GameEnv <: GI.AbstractGameEnv
   history :: Union{Nothing, Vector{Int}}
 end
 
+
+## Returns the game specification of an environment
+# Nothing in the spec, can just return empty spec.
 GI.spec(::GameEnv) = GameSpec()
 
+
+## New game environment in an inital state (possibly random)
 function GI.init(::GameSpec)
   board = INITIAL_STATE.board
   curplayer = INITIAL_STATE.curplayer
@@ -47,6 +57,8 @@ function GI.init(::GameSpec)
   return GameEnv(board, curplayer, finished, winner, amask, history)
 end
 
+
+## Modify the state of the GameEnv
 function GI.set_state!(g::GameEnv, state)
   g.history = nothing
   g.board = state.board
@@ -67,12 +79,18 @@ function GI.set_state!(g::GameEnv, state)
   return
 end
 
+
+## Returns whether or not the game is a two-player game
 GI.two_players(::GameSpec) = true
 
 const ACTIONS = collect(1:NUM_COLS)
 
+
+## A vector of *all* actions (available or not)
 GI.actions(::GameSpec) = ACTIONS
 
+
+## Returns an independent copy of the environment.
 function GI.clone(g::GameEnv)
   history = isnothing(g.history) ? nothing : copy(g.history)
   GameEnv(g.board, g.curplayer, g.finished, g.winner, copy(g.amask), history)
@@ -98,6 +116,11 @@ function update_actions_mask!(g::GameEnv)
   end
 end
 
+
+## Boolean vector for which actions are available
+## The following must hold:
+##    - game_terminated(game) || any(actions_mask(game))
+##    - length(actions_mask(game)) == length(actions(spec(game)))
 GI.actions_mask(g::GameEnv) = g.amask
 
 valid_pos((col, row)) = 1 <= col <= NUM_COLS && 1 <= row <= NUM_ROWS
@@ -137,6 +160,8 @@ function update_status!(g::GameEnv, pos)
   end
 end
 
+
+## Update game environment with chosen action (for current player).
 function GI.play!(g::GameEnv, col)
   isnothing(g.history) || push!(g.history, col)
   row = first_free(g.board, col)
@@ -145,18 +170,27 @@ function GI.play!(g::GameEnv, col)
   g.curplayer = other(g.curplayer)
 end
 
+
+## Gets the current state of the game.
+## WARNING: Result must not change.
 GI.current_state(g::GameEnv) = (board=g.board, curplayer=g.curplayer)
 
+
+## Returns `true` if it is white's turn, `false` otherwise.
 GI.white_playing(g::GameEnv) = g.curplayer == WHITE
 
 #####
 ##### Reward shaping
 #####
 
+
+## Boolean for whether or not the game is over.
 function GI.game_terminated(g::GameEnv)
   return g.finished
 end
 
+
+## Returns the *immediate* reward obtained by the white player after last transition.
 function GI.white_reward(g::GameEnv)
   if g.finished
     g.winner == WHITE && (return  1.)
@@ -213,6 +247,9 @@ function heuristic_value_for(g::GameEnv, player)
   return sum(alignment_value_for(g, player, al) for al in ALIGNMENTS)
 end
 
+
+## Heuristic estimate of the state for *current player*.
+## Not needed for AlphaZero, but is useful for baselines like minimax.
 function GI.heuristic_value(g::GameEnv)
   mine = heuristic_value_for(g, g.curplayer)
   yours = heuristic_value_for(g, other(g.curplayer))
@@ -231,6 +268,9 @@ function flip_colors(board)
     for col in 1:NUM_COLS, row in 1:NUM_ROWS]
 end
 
+
+## Returns the vectorized version of a gamestate.
+## Basically, an array of floats given to the neural network (I think)
 function GI.vectorize_state(::GameSpec, state)
   board = state.curplayer == WHITE ? state.board : flip_colors(state.board)
   return Float32[
@@ -249,6 +289,8 @@ function flipped_board(board)
     for col in reverse(1:NUM_COLS), row in 1:NUM_ROWS]
 end
 
+
+## Returns a vector of gamestate symmetries.
 function GI.symmetries(::GameSpec, state)
   symb = flipped_board(state.board)
   σ = reverse(collect(1:NUM_COLS))
@@ -260,8 +302,11 @@ end
 ##### User interface
 #####
 
+## Returns a string representing a given action.
 GI.action_string(::GameSpec, a) = string(a)
 
+
+## Returns the action denoted by `str`
 function GI.parse_action(g::GameSpec, str)
   try
     p = parse(Int, str)
@@ -285,6 +330,8 @@ player_mark(p)  = p == WHITE ? "o" : "x"
 cell_mark(c)    = c == EMPTY ? "." : player_mark(c)
 cell_color(c)   = c == EMPTY ? crayon"" : player_color(c)
 
+
+## Prints the current game state.
 function GI.render(g::GameEnv; with_position_names=true, botmargin=true)
   pname = player_name(g.curplayer)
   pcol = player_color(g.curplayer)
@@ -305,6 +352,8 @@ function GI.render(g::GameEnv; with_position_names=true, botmargin=true)
   botmargin && print("\n")
 end
 
+
+## Reads a state from standard input. (")
 function GI.read_state(::GameSpec)
   board = Array(INITIAL_BOARD)
   try
