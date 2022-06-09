@@ -56,7 +56,7 @@ end
 function GI.set_state!(g::GameEnv, state)
   g.board = state.board
   g.curplayer = state.curplayer
-  # TODO: update whether or not game is finished.
+  update_status!(g)
 end
 
 
@@ -118,49 +118,40 @@ end
 
 valid_pos((col, row)) = 1 <= col <= NUM_COLS && 1 <= row <= NUM_ROWS
 
-function num_connected_dir(board, player, pos, dir)
-  @assert board[pos...] == player
-  p = pos .+ dir
-  n = 0
-  while valid_pos(p) && board[p...] == player
-    n += 1
-    p = p .+ dir
+
+count_pieces(b::Board, p::Player) = count(c -> c == p, b)
+
+
+# Update statuses for `finished` and `winner`
+function update_status!(g::GameEnv)
+  g.finished = any(1:64) do pos
+    g.board[pos] != EMPTY || 
+      isValidMove(g.board, WHITE, pos) ||
+      isValidMove(g.board, BLACK, pos)
   end
-  return n
-end
 
-function num_connected_axis(board, player, pos, axis)
-  @assert board[pos...] == player
-  num_after = num_connected_dir(board, player, pos, axis)
-  num_before = num_connected_dir(board, player, pos, (0, 0) .- axis)
-  return 1 + num_before + num_after
-end
+  if (g.finished)
+    white_count = count_pieces(g.board, WHITE)
+    black_count = count_pieces(g.board, BLACK)
 
-function winning_pattern_at(board, player, pos)
-  return any(((1, 1), (1, -1), (1, 0), (0, 1))) do axis
-    num_connected_axis(board, player, pos, axis) >= TO_CONNECT
-  end
-end
-
-# Update the game status assuming g.curplayer just played at pos=(col, row)
-function update_status!(g::GameEnv, pos)
-  update_actions_mask!(g)
-  if winning_pattern_at(g.board, g.curplayer, pos)
-    g.winner = g.curplayer
-    g.finished = true
-  else
-    g.finished = !any(g.amask)
+    if (black_count > white_count)
+      g.winner = BLACK
+    elseif (black_count < white_count)
+      g.winner = WHITE
+    else
+      g.winner = EMPTY
+    end
   end
 end
 
 
 ## Update game environment with chosen action (for current player).
-function GI.play!(g::GameEnv, col)
-  isnothing(g.history) || push!(g.history, col)
-  row = first_free(g.board, col)
-  g.board = setindex(g.board, g.curplayer, col, row)
-  update_status!(g, (col, row))
-  g.curplayer = other(g.curplayer)
+function GI.play!(g::GameEnv, action)
+  if action != 0  # 'pass' action
+    g.board = updateOnPlay!(g.board, g.curplayer, action)
+    g.curplayer = other(g.curplayer)
+    update_status!(g)
+  end
 end
 
 
@@ -184,6 +175,7 @@ end
 
 
 ## Returns the *immediate* reward obtained by the white player after last transition.
+# TODO: Consider better reward functions.
 function GI.white_reward(g::GameEnv)
   if g.finished
     g.winner == WHITE && (return  1.)
@@ -261,8 +253,8 @@ flip_cell_color(c::Cell) = c == EMPTY ? EMPTY : other(c)
 
 function flip_colors(board)
   return @SMatrix [
-    flip_cell_color(board[col, row])
-    for col in 1:NUM_COLS, row in 1:NUM_ROWS]
+    flip_cell_color(board[pos])
+    for col in 1:NUM_CELLS]
 end
 
 
@@ -271,9 +263,8 @@ end
 function GI.vectorize_state(::GameSpec, state)
   board = state.curplayer == WHITE ? state.board : flip_colors(state.board)
   return Float32[
-    board[col, row] == c
-    for col in 1:NUM_COLS,
-        row in 1:NUM_ROWS,
+    board[pos] == c
+    for pos in 1:NUM_CELLS,
         c in [EMPTY, WHITE, BLACK]]
 end
 
@@ -281,18 +272,27 @@ end
 ##### Symmetries
 #####
 
-function flipped_board(board)
-  return @SMatrix[board[col, row]
-    for col in reverse(1:NUM_COLS), row in 1:NUM_ROWS]
+function generate_dihedral_symmetries()
+  N = BOARD_SIDE
+  rot((x, y)) = (y, N - x + 1) # 90° rotation
+  flip((x, y)) = (x, N - y + 1) # flip along vertical axis
+  ap(f) = p -> pos_of_xy(f(xy_of_pos(p)))
+  sym(f) = map(ap(f), collect(1:NUM_CELLS))
+  rot2 = rot ∘ rot
+  rot3 = rot2 ∘ rot
+  return [
+    sym(rot), sym(rot2), sym(rot3),
+    sym(flip), sym(flip ∘ rot), sym(flip ∘ rot2), sym(flip ∘ rot3)]
 end
+
+const SYMMETRIES = generate_dihedral_symmetries()
 
 
 ## Returns a vector of gamestate symmetries.
-function GI.symmetries(::GameSpec, state)
-  symb = flipped_board(state.board)
-  σ = reverse(collect(1:NUM_COLS))
-  syms = (board=Board(symb), curplayer=state.curplayer)
-  return [(syms, σ)]
+function GI.symmetries(::GameSpec, s)
+  return [
+    ((board=Board(s.board[sym]), curplayer=s.curplayer), sym)
+    for sym in SYMMETRIES]
 end
 
 #####
