@@ -102,13 +102,12 @@ const DIRECTIONS = [toPos(pos) for pos in [(-1, -1), (0, -1), (1, -1),
 # `player` is either
 # EMPTY, WHITE, BLACK
 function is_valid_move(b::Board, player::Player, pos::Position)
-  opponent = if (player == WHITE) BLACK else WHITE end
-  posXY = index_to_pos(pos)
+  index::Int8 = pos_to_index(pos)
 
-  if b[pos] == EMPTY
+  if b[index] == EMPTY
     # loop through eight directions
     for direction in DIRECTIONS
-      if is_valid_move_direction(b, player, posXY, direction)
+      if is_valid_move_direction(b, player, pos, direction)
         return true
       end
     end
@@ -118,17 +117,33 @@ end
 
 function is_valid_move_direction(b::Board, player::Player, pos::Position, direction::Position)
   opponent = if (player == WHITE) BLACK else WHITE end
+
   next = pos + direction
-  while b[pos_to_index(next)] == opponent
-    next += position
-    if !valid_pos(next)
+  if !valid_pos(next)
+    return false
+  else
+    index = pos_to_index(next)
+    cell = b[index]
+    if cell != opponent
       return false
-    elseif b[pos_to_index(next)] == player
-      return true
     end
   end
 
-  return false
+  while true
+    next += direction
+
+    if (!valid_pos(next))
+      return false
+    end
+
+    cell = b[pos_to_index(next)]
+
+    if cell == EMPTY
+      return false
+    elseif (b[pos_to_index(next)] == player)
+      return true
+    end
+  end
 end
 
 function update_game_board_move(b::Board, player::Player, pos::Position)
@@ -145,6 +160,9 @@ function update_game_board_move(b::Board, player::Player, pos::Position)
       end
     end
   end
+  
+  # Set the actual tile
+  newBoard[pos_to_index(pos)] = player
 
   return SVector(newBoard)
 end
@@ -155,7 +173,6 @@ end
 ##    - game_terminated(game) || any(actions_mask(game))
 ##    - length(actions_mask(game)) == length(actions(spec(game)))
 function GI.actions_mask(g::GameEnv)
-  println("actions_mask")
   if (g.initializing)
     return initial_actions_mask(g)
   else
@@ -187,13 +204,13 @@ function normal_actions_mask(g::GameEnv)
   has_valid_move::Bool = false
   
   for testPos = 1:NUM_CELLS
-    xy::Position = index_to_pos(testPos)
+    xy::Position = index_to_pos(UInt8(testPos))
     if is_valid_move(g.board, g.curplayer, xy)
       has_valid_move = mask[testPos + 1] = true
     end
   end
 
-  if has_valid_move
+  if !has_valid_move
     mask[1] = true
   end
   
@@ -210,15 +227,14 @@ count_pieces(b::Board, p::Player) = count(c -> c == p, b)
 initializing_board(b::Board) = count_pieces(b, EMPTY) > NUM_CELLS - 4
 
 function update_status!(g::GameEnv)
-  println("update_status!")
   if (g.initializing)
     g.initializing = initializing_board(g.board)
     g.finished = false
     g.winner = EMPTY
   else
-    g.finished = any(1:64) do pos
-      g.board[pos] != EMPTY || 
-        is_valid_move(g.board, WHITE, pos) ||
+    g.finished = !any(1:64) do index
+      pos = index_to_pos(UInt8(index))
+      is_valid_move(g.board, WHITE, pos) ||
         is_valid_move(g.board, BLACK, pos)
     end
 
@@ -240,12 +256,15 @@ end
 
 ## Update game environment with chosen action (for current player).
 function GI.play!(g::GameEnv, action)
-  println("play!")
-  g.curplayer = other(g.curplayer)
   if action != 0  # 'pass' action
-    g.board = update_game_board_move(g.board, g.curplayer, index_to_pos(UInt8(action)))
+    if (g.initializing)
+      g.board = setindex(g.board, g.curplayer, UInt8(action))
+    else
+      g.board = update_game_board_move(g.board, g.curplayer, index_to_pos(UInt8(action)))
+    end
     update_status!(g)
   end
+  g.curplayer = other(g.curplayer)
 end
 
 
@@ -271,24 +290,25 @@ end
 
 
 const BASE_WIN_REWARD = 100.0
-const PIECES_WIN_REWARD = 50.0
-const PERFECT_WIN_REWARD = 50.0
+const PIECES_WIN_REWARD = 80.0
+const PERFECT_WIN_REWARD = 80.0
 
 ## Returns the *immediate* reward obtained by the white player after last move.
 # TODO: Consider better reward functions.
 function GI.white_reward(g::GameEnv)
   if g.finished
-    enemy_pieces = count_pieces(g.board, other(g.winner))
-    reward =  BASE_WIN_REWARD
-    reward += PIECES_WIN_REWARD * ((31 - enemy_pieces) / 31)
-    reward += enemy_pieces == 0 ? PERFECT_WIN_REWARD : 0
+    if g.winner != EMPTY
+      enemy_pieces = count_pieces(g.board, other(g.winner))
+      reward =  BASE_WIN_REWARD
+      reward += PIECES_WIN_REWARD * ((31 - enemy_pieces) / 31)
+      reward += enemy_pieces == 0 ? PERFECT_WIN_REWARD : 0
 
-    # Invert reward if black won
-    reward = (g.winner == WHITE) ? reward : -reward
-    return reward
-  else
-    return 0
+      # Invert reward if black won
+      reward = (g.winner == WHITE) ? reward : -reward
+      return reward
+    end
   end
+  return 0
 end
 
 #####
@@ -414,7 +434,7 @@ function GI.action_string(::GameSpec, a)
   if (a == 0)
     "$a) Pass"
   else
-    xy = index_to_pos(a)
+    xy = index_to_pos(UInt8(a))
     "$a) Play tile at $(col_letter(xy[1]))$(xy[2])"
   end
 end
@@ -444,13 +464,15 @@ player_mark(p)  = p == WHITE ? "O" : "X"
 cell_mark(c)    = c == EMPTY ? "." : player_mark(c)
 cell_color(c)   = c == EMPTY ? crayon"" : player_color(c)
 
+
+
 ## Prints the current game state.
 function GI.render(g::GameEnv; with_position_names=true, botmargin=true)
   pname = player_name(g.curplayer)
   pcol = player_color(g.curplayer)
   print(pcol, pname, " plays:", crayon"reset", "\n\n")
   
-  # Print legend
+  # Print top legend
   print("  ")
   for y in 1:BOARD_SIZE
     print(col_letter(y), " ")
@@ -460,13 +482,26 @@ function GI.render(g::GameEnv; with_position_names=true, botmargin=true)
   # Print board
   for row in BOARD_SIZE:-1:1
     print(row, " ")
-    for col in 1:NUM_COLS
-      pos = pos_to_index((col, row))
-      c = g.board[pos]
-      print(cell_color(c), cell_mark(c), crayon"reset", " ")
+    for col in 1:BOARD_SIZE
+      pos = toPos((col, row))
+      index = pos_to_index(toPos((col, row)))
+      c = g.board[index]
+      if c == EMPTY
+        mark = is_valid_move(g.board, g.curplayer, pos) ? "_" : "."
+      else
+        mark = player_mark(c)
+      end
+      print(cell_color(c), mark, crayon"reset", " ")
     end
-    print("\n")
+    print(row, "\n")
   end
+  
+  # Print bottom legend
+  print("  ")
+  for y in 1:BOARD_SIZE
+    print(col_letter(y), " ")
+  end
+  print("\n")
 
   botmargin && print("\n")
 end
