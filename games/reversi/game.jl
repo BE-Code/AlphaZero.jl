@@ -162,10 +162,10 @@ function initial_actions_mask(g::GameEnv)
   mask = MVector{1 + NUM_CELLS, Bool}(repeat([false], NUM_CELLS))
   center::UInt8 = BOARD_SIZE ÷ 2
 
-  allow_action_if_empty(mask, g.board, xy_to_pos(center, center))
-  allow_action_if_empty(mask, g.board, xy_to_pos(center, center + 1))
-  allow_action_if_empty(mask, g.board, xy_to_pos(center + 1, center))
-  allow_action_if_empty(mask, g.board, xy_to_pos(center + 1, center + 1))
+  allow_action_if_empty(mask, g.board, xy_to_pos((center, center)))
+  allow_action_if_empty(mask, g.board, xy_to_pos((center, center + 1)))
+  allow_action_if_empty(mask, g.board, xy_to_pos((center + 1, center)))
+  allow_action_if_empty(mask, g.board, xy_to_pos((center + 1, center + 1)))
 end
 
 function allow_action_if_empty(mask::MVector{NUM_ACTIONS, Bool}, board::Board, pos::UInt8)
@@ -257,15 +257,21 @@ function GI.game_terminated(g::GameEnv)
 end
 
 
+
+
+const BASE_WIN_REWARD = 100.0
+const PIECES_WIN_REWARD = 50.0
+const PERFECT_WIN_REWARD = 50.0
+
 ## Returns the *immediate* reward obtained by the white player after last transition.
 # TODO: Consider better reward functions.
 function GI.white_reward(g::GameEnv)
   if g.finished
-    g.winner == WHITE && (return  1.)
-    g.winner == BLACK && (return -1.)
-    return 0.
-  else
-    return 0.
+    enemy_pieces = count_pieces(g.board, other(g.winner))
+    reward =  BASE_WIN_REWARD
+    reward += PIECES_WIN_REWARD * ((31 - enemy_pieces) / 31)
+    reward += enemy_pieces == 0 ? PERFECT_WIN_REWARD : 0
+    return rewardd
   end
 end
 
@@ -316,16 +322,18 @@ end
 function heuristic_value_for(g::GameEnv, player)
   return sum(alignment_value_for(g, player, al) for al in ALIGNMENTS)
 end
+=#
 
 
 ## Heuristic estimate of the state for *current player*.
 ## Not needed for AlphaZero, but is useful for baselines like minimax.
 function GI.heuristic_value(g::GameEnv)
-  mine = heuristic_value_for(g, g.curplayer)
-  yours = heuristic_value_for(g, other(g.curplayer))
-  return mine - yours
+  p = g.curplayer
+  my_count = count_pieces(g.board, p)
+  enemy_count = count_pieces(g.board, other(p))
+
+  return my_count - enemy_count
 end
-=#
 
 
 #####
@@ -387,10 +395,10 @@ col_letter(number) = 'A' + number - 1
 ## Returns a string representing a given action.
 function GI.action_string(::GameSpec, a)
   if (a == 0)
-    "$a) pass"
+    "$a) Pass"
   else
     xy = pos_to_xy(a)
-    "$a) Play tile at $(col_letter(xy[0]))$(xy[1])"
+    "$a) Play tile at $(col_letter(xy[1]))$(xy[2])"
   end
 end
 
@@ -436,7 +444,7 @@ function GI.render(g::GameEnv; with_position_names=true, botmargin=true)
   for row in BOARD_SIZE:-1:1
     print(row, " ")
     for col in 1:NUM_COLS
-      pos = xy_to_pos(col, row)
+      pos = xy_to_pos((col, row))
       c = g.board[pos]
       print(cell_color(c), cell_mark(c), crayon"reset", " ")
     end
