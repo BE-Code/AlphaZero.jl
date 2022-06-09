@@ -117,6 +117,7 @@ function isValidMove(b::Board, player::UInt8, pos::Position)
     end
   end
   return false
+end
 
 
 function updateOnPlay!(b::Board, player::UInt8, pos::Position) end
