@@ -21,7 +21,7 @@ const Board = SVector{NUM_CELLS, Cell}
 
 const INITIAL_BOARD = Board(zeros(NUM_CELLS))
 #const INITIAL_BOARD = @SMatrix zeros(Cell, NUM_COLS, NUM_ROWS)
-const INITIAL_STATE = (board=INITIAL_BOARD, curplayer=BLACK)
+const INITIAL_STATE = (board=INITIAL_BOARD, curplayer=WHITE)
 
 ## So, basically, this is the PARAMETERS for the game.
 ## For example, if you want to parameterize grid size, you could.
@@ -88,37 +88,42 @@ history(g::GameEnv) = g.history
 ##### Defining game rules
 #####
 
-const Position = Tuple{UInt8, UInt8}
+const Position = Tuple{Int8, Int8}
+toPos(p)::Position = (Int8(p[1]), Int8(p[2]))
 +(a::Position, b::Position)::Position = (a[1] + b[1], a[2] + b[2])
 
-xy_to_pos(xy::Position) = (xy[2] - 1) * BOARD_SIZE + xy[1]
-pos_to_xy(pos::UInt8) = (ceil(pos / BOARD_SIZE), ((pos - 1) % BOARD_SIZE) + 1)
+pos_to_index(xy::Position)::UInt8 = (xy[2] - 1) * BOARD_SIZE + xy[1]
+index_to_pos(pos::UInt8)::Position = (ceil(pos / BOARD_SIZE), ((pos - 1) % BOARD_SIZE) + 1)
 
-const DIRECTIONS = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
+const DIRECTIONS = [toPos(pos) for pos in [(-1, -1), (0, -1), (1, -1),
+                                           (-1,  0),          (1,  0),
+                                           (-1,  1), (0,  1), (1,  1)]]
 
 # `player` is either
 # EMPTY, WHITE, BLACK
-function isValidMove(b::Board, player::Player, pos::Position)
+function is_valid_move(b::Board, player::Player, pos::Position)
   opponent = if (player == WHITE) BLACK else WHITE end
-  posXY = pos_to_xy(pos)
+  posXY = index_to_pos(pos)
 
   if b[pos] == EMPTY
     # loop through eight directions
     for direction in DIRECTIONS
-      if isValidDirection(b, player, posXY, direction)
+      if is_valid_move_direction(b, player, posXY, direction)
         return true
+      end
+    end
   end
   return false
 end
 
-function isValidDirection(b::Board, player::Player, pos::Position, direction::Position)
+function is_valid_move_direction(b::Board, player::Player, pos::Position, direction::Position)
   opponent = if (player == WHITE) BLACK else WHITE end
   next = pos + direction
-  while b[xy_to_pos(next)] == opponent
+  while b[pos_to_index(next)] == opponent
     next += position
     if !valid_pos(next)
       return false
-    elseif b[xy_to_pos(next)] == player
+    elseif b[pos_to_index(next)] == player
       return true
     end
   end
@@ -126,17 +131,16 @@ function isValidDirection(b::Board, player::Player, pos::Position, direction::Po
   return false
 end
 
-function updateOnPlay(b::Board, player::Player, pos::Position)
+function update_game_board_move(b::Board, player::Player, pos::Position)
   newBoard = MVector(b)
   opponent = if (player == WHITE) BLACK else WHITE end
-  posXY = pos_to_xy(pos)
 
   # loop through eight directions
   for direction in DIRECTIONS
-    if isValidDirection(b, player, posXY, direction)
-      next = posXY + direction
-      while b[xy_to_pos(next)] != player
-        newBoard[xy_to_pos(next)] = player
+    if is_valid_move_direction(b, player, pos, direction)
+      next = pos + direction
+      while b[pos_to_index(next)] != player
+        newBoard[pos_to_index(next)] = player
         next += direction
       end
     end
@@ -152,35 +156,38 @@ end
 ##    - length(actions_mask(game)) == length(actions(spec(game)))
 function GI.actions_mask(g::GameEnv)
   if (g.initializing)
-    initial_actions_mask(g)
+    return initial_actions_mask(g)
   else
-    normal_actions_mask(g)
+    return normal_actions_mask(g)
   end
 end
 
-function initial_actions_mask(g::GameEnv)
-  mask = MVector{1 + NUM_CELLS, Bool}(repeat([false], NUM_CELLS))
-  center::UInt8 = BOARD_SIZE ÷ 2
-
-  allow_action_if_empty(mask, g.board, xy_to_pos((center, center)))
-  allow_action_if_empty(mask, g.board, xy_to_pos((center, center + 1)))
-  allow_action_if_empty(mask, g.board, xy_to_pos((center + 1, center)))
-  allow_action_if_empty(mask, g.board, xy_to_pos((center + 1, center + 1)))
-end
-
-function allow_action_if_empty(mask::MVector{NUM_ACTIONS, Bool}, board::Board, pos::UInt8)
+function allow_action_if_empty(mask::Vector{Bool}, board::Board, pos::UInt8)
   if (board[pos] == EMPTY)
     mask[pos + 1] = true
   end
 end
 
+function initial_actions_mask(g::GameEnv)
+  mask = Vector{Bool}(repeat([false], NUM_ACTIONS))
+  center_val::UInt8 = BOARD_SIZE ÷ 2
+  center::Position = (center_val, center_val)
+
+  allow_action_if_empty(mask, g.board, pos_to_index(center + toPos((0, 0))))
+  allow_action_if_empty(mask, g.board, pos_to_index(center + toPos((0, 1))))
+  allow_action_if_empty(mask, g.board, pos_to_index(center + toPos((1, 0))))
+  allow_action_if_empty(mask, g.board, pos_to_index(center + toPos((1, 1))))
+
+  return mask
+end
+
 function normal_actions_mask(g::GameEnv)
-  mask = MVector{1 + NUM_CELLS, Bool}(repeat([false], NUM_CELLS))
+  mask = Vector{Bool}(repeat([false], NUM_ACTIONS))
   has_valid_move::Bool = false
   
   for testPos = 1:NUM_CELLS
-    xy::Position = pos_to_xy(testPos)
-    if isValidMove(g.board, g.curplayer, xy)
+    xy::Position = index_to_pos(testPos)
+    if is_valid_move(g.board, g.curplayer, xy)
       has_valid_move = mask[testPos + 1] = true
     end
   end
@@ -209,8 +216,8 @@ function update_status!(g::GameEnv)
   else
     g.finished = any(1:64) do pos
       g.board[pos] != EMPTY || 
-        isValidMove(g.board, WHITE, pos) ||
-        isValidMove(g.board, BLACK, pos)
+        is_valid_move(g.board, WHITE, pos) ||
+        is_valid_move(g.board, BLACK, pos)
     end
 
     if (g.finished)
@@ -225,14 +232,15 @@ function update_status!(g::GameEnv)
         g.winner = EMPTY
       end
     end
+  end
 end
 
 
 ## Update game environment with chosen action (for current player).
 function GI.play!(g::GameEnv, action)
+  g.curplayer = other(g.curplayer)
   if action != 0  # 'pass' action
-    g.board = updateOnPlay!(g.board, g.curplayer, action)
-    g.curplayer = other(g.curplayer)
+    g.board = update_game_board_move(g.board, g.curplayer, index_to_pos(UInt8(action)))
     update_status!(g)
   end
 end
@@ -263,7 +271,7 @@ const BASE_WIN_REWARD = 100.0
 const PIECES_WIN_REWARD = 50.0
 const PERFECT_WIN_REWARD = 50.0
 
-## Returns the *immediate* reward obtained by the white player after last transition.
+## Returns the *immediate* reward obtained by the white player after last move.
 # TODO: Consider better reward functions.
 function GI.white_reward(g::GameEnv)
   if g.finished
@@ -275,6 +283,8 @@ function GI.white_reward(g::GameEnv)
     # Invert reward if black won
     reward = (g.winner == WHITE) ? reward : -reward
     return reward
+  else
+    return 0
   end
 end
 
@@ -346,7 +356,7 @@ end
 flip_cell_color(c::Cell) = c == EMPTY ? EMPTY : other(c)
 
 function flip_colors(board)
-  return @SMatrix [
+  return @SVector [
     flip_cell_color(board[pos])
     for col in 1:NUM_CELLS]
 end
@@ -367,11 +377,11 @@ end
 #####
 
 function generate_dihedral_symmetries()
-  N = BOARD_SIDE
-  rot((x, y)) = (y, N - x + 1) # 90° rotation
-  flip((x, y)) = (x, N - y + 1) # flip along vertical axis
-  ap(f) = p -> pos_of_xy(f(xy_of_pos(p)))
-  sym(f) = map(ap(f), collect(1:NUM_CELLS))
+  N = BOARD_SIZE
+  rot((x, y)) = toPos((y, N - x + 1)) # 90° rotation
+  flip((x, y)) = toPos((x, N - y + 1)) # flip along vertical axis
+  ap(f) = p -> pos_to_index(f(index_to_pos(UInt8(p))))
+  sym(f) = map(ap(f), collect(UInt8, 1:NUM_CELLS))
   rot2 = rot ∘ rot
   rot3 = rot2 ∘ rot
   return [
@@ -400,7 +410,7 @@ function GI.action_string(::GameSpec, a)
   if (a == 0)
     "$a) Pass"
   else
-    xy = pos_to_xy(a)
+    xy = index_to_pos(a)
     "$a) Play tile at $(col_letter(xy[1]))$(xy[2])"
   end
 end
@@ -447,7 +457,7 @@ function GI.render(g::GameEnv; with_position_names=true, botmargin=true)
   for row in BOARD_SIZE:-1:1
     print(row, " ")
     for col in 1:NUM_COLS
-      pos = xy_to_pos((col, row))
+      pos = pos_to_index((col, row))
       c = g.board[pos]
       print(cell_color(c), cell_mark(c), crayon"reset", " ")
     end
