@@ -1,3 +1,4 @@
+import Base.+
 import AlphaZero.GI
 
 using Crayons
@@ -88,39 +89,61 @@ history(g::GameEnv) = g.history
 #####
 
 const Position = Tuple{UInt8, UInt8}
++(a::Position, b::Position)::Position = (a[1] + b[1], a[2] + b[2])
 
-xy_to_pos(x::UInt8, y::UInt8) = (y - 1) * BOARD_SIZE + x
+xy_to_pos(xy::Position) = (xy[2] - 1) * BOARD_SIZE + xy[1]
 pos_to_xy(pos::UInt8) = (ceil(pos / BOARD_SIZE), ((pos - 1) % BOARD_SIZE) + 1)
+
+const DIRECTIONS = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
 
 # `player` is either
 # EMPTY, WHITE, BLACK
-function isValidMove(b::Board, player::UInt8, pos::Position)
-  opponent = if (player == WHITE) BLACK else WHITE end 
-  if b[pos] != EMPTY
+function isValidMove(b::Board, player::Player, pos::Position)
+  opponent = if (player == WHITE) BLACK else WHITE end
+  posXY = pos_to_xy(pos)
+
+  if b[pos] == EMPTY
     # loop through eight directions
-    for i in [-BOARD_SIZE - 1, -BOARD_SIZE, -BOARD_SIZE + 1, -1, 1, BOARD_SIZE - 1, BOARD_SIZE, BOARD_SIZE + 1]
-      # if direction has piece of other color
-      if pos + i > 0 && pos + i <= NUM_CELLS && b[pos + i] == opponent
-        # loop through other spaces in that direction
-        next = pos + i + i
-        while next > 0 && next <= NUM_CELLS
-          # if own color found return true
-          if b[next] == player
-            return true
-          # if space found, break
-          elseif b[next] == EMPTY
-            break
-          end
-          next += i
-        end
-      end
-    end
+    for direction in DIRECTIONS
+      if isValidDirection(b, player, posXY, direction)
+        return true
   end
   return false
 end
 
+function isValidDirection(b::Board, player::Player, pos::Position, direction::Position)
+  opponent = if (player == WHITE) BLACK else WHITE end
+  next = pos + direction
+  while b[xy_to_pos(next)] == opponent
+    next += position
+    if !valid_pos(next)
+      return false
+    elseif b[xy_to_pos(next)] == player
+      return true
+    end
+  end
 
-function updateOnPlay!(b::Board, player::UInt8, pos::Position) end
+  return false
+end
+
+function updateOnPlay(b::Board, player::Player, pos::Position)
+  newBoard = MVector(b)
+  opponent = if (player == WHITE) BLACK else WHITE end
+  posXY = pos_to_xy(pos)
+
+  # loop through eight directions
+  for direction in DIRECTIONS
+    if isValidDirection(b, player, posXY, direction)
+      next = posXY + direction
+      while b[xy_to_pos(next)] != player
+        newBoard[xy_to_pos(next)] = player
+        next += direction
+      end
+    end
+  end
+
+  return SVector(newBoard)
+end
 
 
 ## Boolean vector for which actions are available
@@ -169,7 +192,7 @@ function normal_actions_mask(g::GameEnv)
   return mask
 end
 
-valid_pos((col, row)) = 1 <= col <= NUM_COLS && 1 <= row <= NUM_ROWS
+valid_pos((col, row)) = 1 <= col <= BOARD_SIZE && 1 <= row <= BOARD_SIZE
 
 
 count_pieces(b::Board, p::Player) = count(c -> c == p, b)
