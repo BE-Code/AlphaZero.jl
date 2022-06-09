@@ -289,26 +289,16 @@ end
 
 
 
-const BASE_WIN_REWARD = 100.0
-const PIECES_WIN_REWARD = 80.0
-const PERFECT_WIN_REWARD = 80.0
-
 ## Returns the *immediate* reward obtained by the white player after last move.
 # TODO: Consider better reward functions.
 function GI.white_reward(g::GameEnv)
   if g.finished
-    if g.winner != EMPTY
-      enemy_pieces = count_pieces(g.board, other(g.winner))
-      reward =  BASE_WIN_REWARD
-      reward += PIECES_WIN_REWARD * ((31 - enemy_pieces) / 31)
-      reward += enemy_pieces == 0 ? PERFECT_WIN_REWARD : 0
-
-      # Invert reward if black won
-      reward = (g.winner == WHITE) ? reward : -reward
-      return reward
-    end
+    g.winner == WHITE && (return  1.)
+    g.winner == BLACK && (return -1.)
+    return 0.
+  else
+    return 0.
   end
-  return 0
 end
 
 #####
