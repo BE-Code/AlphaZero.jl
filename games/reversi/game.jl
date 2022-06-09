@@ -80,7 +80,7 @@ end
 ## Returns whether or not the game is a two-player game
 GI.two_players(::GameSpec) = true
 
-const ACTIONS = collect(1:NUM_COLS)
+const ACTIONS = collect(0:NUM_CELLS)
 
 
 ## A vector of *all* actions (available or not)
@@ -99,9 +99,15 @@ history(g::GameEnv) = g.history
 ##### Defining game rules
 #####
 
+const Position = Tuple{UInt8, UInt8}
 
 xy_to_pos(x::Uint8, y::Uint8) = (y - 1) * BOARD_SIZE + x
 pos_to_xy(pos::Uint8) = (ceil(pos / BOARD_SIZE), ((pos - 1) % BOARD_SIZE) + 1)
+
+# `player` is either
+# EMPTY, WHITE, BLACK
+function isValidMove(b::Board, player::UInt8, pos::Position) end
+function updateOnPlay!(b::Board, player::UInt8, pos::Position) end
 
 
 function first_free(board, col)
