@@ -271,7 +271,10 @@ function GI.white_reward(g::GameEnv)
     reward =  BASE_WIN_REWARD
     reward += PIECES_WIN_REWARD * ((31 - enemy_pieces) / 31)
     reward += enemy_pieces == 0 ? PERFECT_WIN_REWARD : 0
-    return rewardd
+
+    # Invert reward if black won
+    reward = (g.winner == WHITE) ? reward : -reward
+    return reward
   end
 end
 
