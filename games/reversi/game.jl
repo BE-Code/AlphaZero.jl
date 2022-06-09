@@ -94,7 +94,31 @@ pos_to_xy(pos::UInt8) = (ceil(pos / BOARD_SIZE), ((pos - 1) % BOARD_SIZE) + 1)
 
 # `player` is either
 # EMPTY, WHITE, BLACK
-function isValidMove(b::Board, player::UInt8, pos::Position) end
+function isValidMove(b::Board, player::UInt8, pos::Position)
+  opponent = if (player == WHITE) BLACK else WHITE end 
+  if b[pos] != EMPTY
+    # loop through eight directions
+    for i in [-BOARD_SIZE - 1, -BOARD_SIZE, -BOARD_SIZE + 1, -1, 1, BOARD_SIZE - 1, BOARD_SIZE, BOARD_SIZE + 1]
+      # if direction has piece of other color
+      if pos + i > 0 && pos + i <= NUM_CELLS && b[pos + i] == opponent
+        # loop through other spaces in that direction
+        next = pos + i + i
+        while next > 0 && next <= NUM_CELLS
+          # if own color found return true
+          if b[next] == player
+            return true
+          # if space found, break
+          elseif b[next] == EMPTY
+            break
+          end
+          next += i
+        end
+      end
+    end
+  end
+  return false
+
+
 function updateOnPlay!(b::Board, player::UInt8, pos::Position) end
 
 
