@@ -107,5 +107,5 @@ benchmark = [
 ##### Wrapping up in an experiment
 #####
 
-experiment = Experiment("connect-four",
+experiment = Experiment("reversi",
   GameSpec(), params, Network, netparams, benchmark)
