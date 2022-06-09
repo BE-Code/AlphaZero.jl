@@ -15,6 +15,7 @@ module Examples
   export Mancala
 
   include("../games/reversi/main.jl")
+  export Reversi
 
   const games = Dict(
     "grid-world" => GridWorld.GameSpec(),
@@ -31,7 +32,7 @@ module Examples
     "tictactoe" => Tictactoe.Training.experiment,
     "connect-four" => ConnectFour.Training.experiment,
     "mancala" => Mancala.Training.experiment,
-    "reversi" => Reversi.GameSpec())
+    "reversi" => Reversi.Training.experiment)
     # "ospiel_ttt" => OSpielTictactoe.Training.experiment
 
 end

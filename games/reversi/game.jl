@@ -155,6 +155,7 @@ end
 ##    - game_terminated(game) || any(actions_mask(game))
 ##    - length(actions_mask(game)) == length(actions(spec(game)))
 function GI.actions_mask(g::GameEnv)
+  println("actions_mask")
   if (g.initializing)
     return initial_actions_mask(g)
   else
@@ -209,6 +210,7 @@ count_pieces(b::Board, p::Player) = count(c -> c == p, b)
 initializing_board(b::Board) = count_pieces(b, EMPTY) > NUM_CELLS - 4
 
 function update_status!(g::GameEnv)
+  println("update_status!")
   if (g.initializing)
     g.initializing = initializing_board(g.board)
     g.finished = false
@@ -238,6 +240,7 @@ end
 
 ## Update game environment with chosen action (for current player).
 function GI.play!(g::GameEnv, action)
+  println("play!")
   g.curplayer = other(g.curplayer)
   if action != 0  # 'pass' action
     g.board = update_game_board_move(g.board, g.curplayer, index_to_pos(UInt8(action)))
@@ -367,8 +370,9 @@ end
 function GI.vectorize_state(::GameSpec, state)
   board = state.curplayer == WHITE ? state.board : flip_colors(state.board)
   return Float32[
-    board[pos] == c
-    for pos in 1:NUM_CELLS,
+    board[pos_to_index(toPos((x, y)))] == c
+    for y in 1:BOARD_SIZE,
+        x in 1:BOARD_SIZE,
         c in [EMPTY, WHITE, BLACK]]
 end
 
