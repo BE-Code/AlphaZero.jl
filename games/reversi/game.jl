@@ -93,7 +93,7 @@ toPos(p)::Position = (Int8(p[1]), Int8(p[2]))
 +(a::Position, b::Position)::Position = (a[1] + b[1], a[2] + b[2])
 
 pos_to_index(xy::Position)::UInt8 = (xy[2] - 1) * BOARD_SIZE + xy[1]
-index_to_pos(pos::UInt8)::Position = (ceil(pos / BOARD_SIZE), ((pos - 1) % BOARD_SIZE) + 1)
+index_to_pos(index::UInt8)::Position = (((index - 1) % BOARD_SIZE) + 1, ceil(index / BOARD_SIZE))
 
 const DIRECTIONS = [toPos(pos) for pos in [(-1, -1), (0, -1), (1, -1),
                                            (-1,  0),          (1,  0),
@@ -231,7 +231,10 @@ function update_status!(g::GameEnv)
     g.initializing = initializing_board(g.board)
     g.finished = false
     g.winner = EMPTY
-  else
+  end
+  
+  # Yes, this needs to work like this.
+  if (!g.initializing)
     g.finished = !any(1:64) do index
       pos = index_to_pos(UInt8(index))
       is_valid_move(g.board, WHITE, pos) ||
@@ -289,9 +292,9 @@ end
 
 
 
-const BASE_WIN_REWARD = 100.0
-const PIECES_WIN_REWARD = 80.0
-const PERFECT_WIN_REWARD = 80.0
+const BASE_WIN_REWARD = 1.0
+const PIECES_WIN_REWARD = 0
+const PERFECT_WIN_REWARD = 0
 
 ## Returns the *immediate* reward obtained by the white player after last move.
 # TODO: Consider better reward functions.
@@ -299,7 +302,7 @@ function GI.white_reward(g::GameEnv)
   if g.finished
     if g.winner != EMPTY
       enemy_pieces = count_pieces(g.board, other(g.winner))
-      reward =  BASE_WIN_REWARD
+      reward::Float64 = BASE_WIN_REWARD
       reward += PIECES_WIN_REWARD * ((31 - enemy_pieces) / 31)
       reward += enemy_pieces == 0 ? PERFECT_WIN_REWARD : 0
 
@@ -308,7 +311,7 @@ function GI.white_reward(g::GameEnv)
       return reward
     end
   end
-  return 0
+  return 0.0
 end
 
 #####
@@ -368,7 +371,7 @@ function GI.heuristic_value(g::GameEnv)
   my_count = count_pieces(g.board, p)
   enemy_count = count_pieces(g.board, other(p))
 
-  return my_count - enemy_count
+  return Float64(my_count - enemy_count)
 end
 
 
@@ -381,7 +384,7 @@ flip_cell_color(c::Cell) = c == EMPTY ? EMPTY : other(c)
 function flip_colors(board)
   return @SVector [
     flip_cell_color(board[pos])
-    for col in 1:NUM_CELLS]
+    for pos in 1:NUM_CELLS]
 end
 
 
@@ -404,7 +407,8 @@ function generate_dihedral_symmetries()
   N = BOARD_SIZE
   rot((x, y)) = toPos((y, N - x + 1)) # 90° rotation
   flip((x, y)) = toPos((x, N - y + 1)) # flip along vertical axis
-  ap(f) = p -> pos_to_index(f(index_to_pos(UInt8(p))))
+  ap(f) = p -> Int(pos_to_index(f(index_to_pos(UInt8(p)))))
+
   sym(f) = map(ap(f), collect(UInt8, 1:NUM_CELLS))
   rot2 = rot ∘ rot
   rot3 = rot2 ∘ rot
@@ -419,7 +423,8 @@ const SYMMETRIES = generate_dihedral_symmetries()
 ## Returns a vector of gamestate symmetries.
 function GI.symmetries(::GameSpec, s)
   return [
-    ((board=Board(s.board[sym]), curplayer=s.curplayer), sym)
+    ((board=Board(s.board[sym]), curplayer=s.curplayer),
+      cat([1], 1 .+ sym; dims=1))
     for sym in SYMMETRIES]
 end
 
@@ -442,9 +447,20 @@ end
 
 ## Returns the action denoted by `str`
 function GI.parse_action(g::GameSpec, str)
+  print("Parsing $str: ")
   try
-    p = parse(Int, str)
-    0 <= p <= NUM_CELLS ? p : nothing
+    str = lowercase(str)
+    if (str == "0" || str == "pass")
+      return 0
+    elseif (length(str) == 2 && 'a' <= str[1] <= 'h' && '1' <= str[2] <= '8')
+      x = str[1] - 'a' + 1
+      y = str[2] - '0'
+      index = pos_to_index(toPos((x, y)))
+      println("Got ($x, $y) -> $index")
+      return index
+    else
+      nothing
+    end
   catch
     nothing
   end
