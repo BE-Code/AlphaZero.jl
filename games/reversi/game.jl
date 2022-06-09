@@ -18,11 +18,10 @@ const EMPTY = 0x00
 const Board = SVector{NUM_CELLS, Cell}
 #const Board = SMatrix{NUM_COLS, NUM_ROWS, Cell, NUM_CELLS}
 
-const INITIAL_BOARD = @SVector zeros(Cell, NUM_CELLS);
+const INITIAL_BOARD = Board(zeros(NUM_CELLS))
 #const INITIAL_BOARD = @SMatrix zeros(Cell, NUM_COLS, NUM_ROWS)
 const INITIAL_STATE = (board=INITIAL_BOARD, curplayer=WHITE)
 
-# TODO: we could have the game parametrized by grid size.
 ## So, basically, this is the PARAMETERS for the game.
 ## For example, if you want to parameterize grid size, you could.
 struct GameSpec <: GI.AbstractGameSpec end
@@ -49,37 +48,24 @@ function GI.init(::GameSpec)
   curplayer = INITIAL_STATE.curplayer
   finished = false
   winner = 0x00
-  amask = trues(NUM_COLS)
-  history = Int[]
-  return GameEnv(board, curplayer, finished, winner, amask, history)
+  return GameEnv(board, curplayer, finished, winner)
 end
 
 
 ## Modify the state of the GameEnv with `state`
 function GI.set_state!(g::GameEnv, state)
-  g.history = nothing
   g.board = state.board
   g.curplayer = state.curplayer
-  update_actions_mask!(g)
-  any(g.amask) || (g.finished = true)
-  for col in 1:NUM_COLS
-    top = first_free(g.board, col)
-    top == 1 && continue
-    row = top - 1
-    c = state.board[col, row]
-    if c != EMPTY && winning_pattern_at(state.board, c, (col, row))
-      g.winner = c
-      g.finished = true
-      break
-    end
-  end
-  return
+  # TODO: update whether or not game is finished.
 end
 
 
 ## Returns whether or not the game is a two-player game
 GI.two_players(::GameSpec) = true
 
+
+# 0 is the pass action, available only when all other actions are unavailable.
+# 1-64 represent the corresponding cells on the board.
 const ACTIONS = collect(0:NUM_CELLS)
 
 
@@ -89,8 +75,7 @@ GI.actions(::GameSpec) = ACTIONS
 
 ## Returns an independent copy of the environment.
 function GI.clone(g::GameEnv)
-  history = isnothing(g.history) ? nothing : copy(g.history)
-  GameEnv(g.board, g.curplayer, g.finished, g.winner, copy(g.amask), history)
+  GameEnv(g.board, g.curplayer, g.finished, g.winner)
 end
 
 history(g::GameEnv) = g.history
@@ -101,8 +86,8 @@ history(g::GameEnv) = g.history
 
 const Position = Tuple{UInt8, UInt8}
 
-xy_to_pos(x::Uint8, y::Uint8) = (y - 1) * BOARD_SIZE + x
-pos_to_xy(pos::Uint8) = (ceil(pos / BOARD_SIZE), ((pos - 1) % BOARD_SIZE) + 1)
+xy_to_pos(x::UInt8, y::UInt8) = (y - 1) * BOARD_SIZE + x
+pos_to_xy(pos::UInt8) = (ceil(pos / BOARD_SIZE), ((pos - 1) % BOARD_SIZE) + 1)
 
 # `player` is either
 # EMPTY, WHITE, BLACK
@@ -110,26 +95,26 @@ function isValidMove(b::Board, player::UInt8, pos::Position) end
 function updateOnPlay!(b::Board, player::UInt8, pos::Position) end
 
 
-function first_free(board, col)
-  row = 1
-  while row <= NUM_ROWS && board[col, row] != EMPTY
-    row += 1
-  end
-  return row
-end
-
-function update_actions_mask!(g::GameEnv)
-  g.amask = map(ACTIONS) do col
-    first_free(g.board, col) <= NUM_ROWS
-  end
-end
-
-
 ## Boolean vector for which actions are available
 ## The following must hold:
 ##    - game_terminated(game) || any(actions_mask(game))
 ##    - length(actions_mask(game)) == length(actions(spec(game)))
-GI.actions_mask(g::GameEnv) = g.amask
+function GI.actions_mask(g::GameEnv)
+  has_valid_move::Bool = false
+  mask = MVector{1 + NUM_CELLS, Bool}(repeat([false], NUM_CELLS))
+  
+  for testPos = 1:NUM_CELLS
+    xy = pos_to_xy(testPos)
+    if has_valid_move(g.board, g.curplayer, xy)
+      has_valid_move = mask[testPos] = true;
+    end
+  end
+
+  if has_valid_move
+    mask[0] = true;
+  end
+  return mask
+end
 
 valid_pos((col, row)) = 1 <= col <= NUM_COLS && 1 <= row <= NUM_ROWS
 
