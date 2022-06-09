@@ -32,6 +32,7 @@ struct GameSpec <: GI.AbstractGameSpec end
 mutable struct GameEnv <: GI.AbstractGameEnv
   board :: Board
   curplayer :: Player
+  initializing :: Bool
   finished :: Bool
   winner :: Player
 end
@@ -46,9 +47,10 @@ GI.spec(::GameEnv) = GameSpec()
 function GI.init(::GameSpec)
   board = INITIAL_STATE.board
   curplayer = INITIAL_STATE.curplayer
+  initializing = true
   finished = false
   winner = 0x00
-  return GameEnv(board, curplayer, finished, winner)
+  return GameEnv(board, curplayer, initializing, finished, winner)
 end
 
 
@@ -67,6 +69,7 @@ GI.two_players(::GameSpec) = true
 # 0 is the pass action, available only when all other actions are unavailable.
 # 1-64 represent the corresponding cells on the board.
 const ACTIONS = collect(0:NUM_CELLS)
+const NUM_ACTIONS = length(ACTIONS)
 
 
 ## A vector of *all* actions (available or not)
@@ -75,7 +78,7 @@ GI.actions(::GameSpec) = ACTIONS
 
 ## Returns an independent copy of the environment.
 function GI.clone(g::GameEnv)
-  GameEnv(g.board, g.curplayer, g.finished, g.winner)
+  GameEnv(g.board, g.curplayer, g.initializing, g.finished, g.winner)
 end
 
 history(g::GameEnv) = g.history
@@ -100,19 +103,44 @@ function updateOnPlay!(b::Board, player::UInt8, pos::Position) end
 ##    - game_terminated(game) || any(actions_mask(game))
 ##    - length(actions_mask(game)) == length(actions(spec(game)))
 function GI.actions_mask(g::GameEnv)
-  has_valid_move::Bool = false
+  if (g.initializing)
+    initial_actions_mask(g)
+  else
+    normal_actions_mask(g)
+  end
+end
+
+function initial_actions_mask(g::GameEnv)
   mask = MVector{1 + NUM_CELLS, Bool}(repeat([false], NUM_CELLS))
+  center::UInt8 = BOARD_SIZE ÷ 2
+
+  allow_action_if_empty(mask, g.board, xy_to_pos(center, center))
+  allow_action_if_empty(mask, g.board, xy_to_pos(center, center + 1))
+  allow_action_if_empty(mask, g.board, xy_to_pos(center + 1, center))
+  allow_action_if_empty(mask, g.board, xy_to_pos(center + 1, center + 1))
+end
+
+function allow_action_if_empty(mask::MVector{NUM_ACTIONS, Bool}, board::Board, pos::UInt8)
+  if (board[pos] == EMPTY)
+    mask[pos + 1] = true
+  end
+end
+
+function normal_actions_mask(g::GameEnv)
+  mask = MVector{1 + NUM_CELLS, Bool}(repeat([false], NUM_CELLS))
+  has_valid_move::Bool = false
   
   for testPos = 1:NUM_CELLS
-    xy = pos_to_xy(testPos)
-    if has_valid_move(g.board, g.curplayer, xy)
-      has_valid_move = mask[testPos] = true;
+    xy::Position = pos_to_xy(testPos)
+    if isValidMove(g.board, g.curplayer, xy)
+      has_valid_move = mask[testPos + 1] = true
     end
   end
 
   if has_valid_move
-    mask[0] = true;
+    mask[1] = true
   end
+  
   return mask
 end
 
@@ -123,25 +151,32 @@ count_pieces(b::Board, p::Player) = count(c -> c == p, b)
 
 
 # Update statuses for `finished` and `winner`
+initializing_board(b::Board) = count_pieces(b, EMPTY) > NUM_CELLS - 4
+
 function update_status!(g::GameEnv)
-  g.finished = any(1:64) do pos
-    g.board[pos] != EMPTY || 
-      isValidMove(g.board, WHITE, pos) ||
-      isValidMove(g.board, BLACK, pos)
-  end
-
-  if (g.finished)
-    white_count = count_pieces(g.board, WHITE)
-    black_count = count_pieces(g.board, BLACK)
-
-    if (black_count > white_count)
-      g.winner = BLACK
-    elseif (black_count < white_count)
-      g.winner = WHITE
-    else
-      g.winner = EMPTY
+  if (g.initializing)
+    g.initializing = initializing_board(g.board)
+    g.finished = false
+    g.winner = EMPTY
+  else
+    g.finished = any(1:64) do pos
+      g.board[pos] != EMPTY || 
+        isValidMove(g.board, WHITE, pos) ||
+        isValidMove(g.board, BLACK, pos)
     end
-  end
+
+    if (g.finished)
+      white_count = count_pieces(g.board, WHITE)
+      black_count = count_pieces(g.board, BLACK)
+
+      if (black_count > white_count)
+        g.winner = BLACK
+      elseif (black_count < white_count)
+        g.winner = WHITE
+      else
+        g.winner = EMPTY
+      end
+    end
 end
 
 
