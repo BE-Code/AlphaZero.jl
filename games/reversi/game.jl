@@ -20,7 +20,7 @@ const Board = SVector{NUM_CELLS, Cell}
 
 const INITIAL_BOARD = Board(zeros(NUM_CELLS))
 #const INITIAL_BOARD = @SMatrix zeros(Cell, NUM_COLS, NUM_ROWS)
-const INITIAL_STATE = (board=INITIAL_BOARD, curplayer=WHITE)
+const INITIAL_STATE = (board=INITIAL_BOARD, curplayer=BLACK)
 
 ## So, basically, this is the PARAMETERS for the game.
 ## For example, if you want to parameterize grid size, you could.
@@ -334,16 +334,24 @@ end
 ##### User interface
 #####
 
-#=
+col_letter(number) = 'A' + number - 1
+
 ## Returns a string representing a given action.
-GI.action_string(::GameSpec, a) = string(a)
+function GI.action_string(::GameSpec, a)
+  if (a == 0)
+    "$a) pass"
+  else
+    xy = pos_to_xy(a)
+    "$a) Play tile at $(col_letter(xy[0]))$(xy[1])"
+  end
+end
 
 
 ## Returns the action denoted by `str`
 function GI.parse_action(g::GameSpec, str)
   try
     p = parse(Int, str)
-    1 <= p <= NUM_COLS ? p : nothing
+    0 <= p <= NUM_CELLS ? p : nothing
   catch
     nothing
   end
@@ -358,35 +366,41 @@ end
 # o x x x . x .
 
 player_color(p) = p == WHITE ? crayon"light_red" : crayon"light_blue"
-player_name(p)  = p == WHITE ? "Red" : "Blue"
-player_mark(p)  = p == WHITE ? "o" : "x"
+player_name(p)  = p == WHITE ? "Red (W)" : "Blue (B)"
+player_mark(p)  = p == WHITE ? "O" : "X"
 cell_mark(c)    = c == EMPTY ? "." : player_mark(c)
 cell_color(c)   = c == EMPTY ? crayon"" : player_color(c)
-
 
 ## Prints the current game state.
 function GI.render(g::GameEnv; with_position_names=true, botmargin=true)
   pname = player_name(g.curplayer)
   pcol = player_color(g.curplayer)
   print(pcol, pname, " plays:", crayon"reset", "\n\n")
+  
   # Print legend
-  for col in 1:NUM_COLS
-    print(GI.action_string(GI.spec(g), col), " ")
+  print("  ")
+  for y in 1:BOARD_SIZE
+    print(col_letter(y), " ")
   end
   print("\n")
+
   # Print board
-  for row in NUM_ROWS:-1:1
+  for row in BOARD_SIZE:-1:1
+    print(row, " ")
     for col in 1:NUM_COLS
-      c = g.board[col, row]
+      pos = xy_to_pos(col, row)
+      c = g.board[pos]
       print(cell_color(c), cell_mark(c), crayon"reset", " ")
     end
     print("\n")
   end
+
   botmargin && print("\n")
 end
 
-
+#=
 ## Reads a state from standard input. (")
+## Honestly, I don't know what this is supposed to do.
 function GI.read_state(::GameSpec)
   board = Array(INITIAL_BOARD)
   try
